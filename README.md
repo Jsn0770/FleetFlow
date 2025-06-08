@@ -63,31 +63,31 @@ FleetFlow é uma aplicação web full-stack que permite o gerenciamento completo
 
 ### 1. Clone o repositório
 
-\`\`\`bash
+
 git clone https://github.com/Jsn0770/FleetFlow.git
 cd fleetflow
-\`\`\`
+
 
 ### 2. Instale as dependências do frontend
 
-\`\`\`bash
+
 npm install --force
-\`\`\`
+
 
 ### 3. Instale as dependências do backend
 
-\`\`\`bash
+
 cd backend
 npm install
 cd ..
-\`\`\`
+
 
 ### 4. Configure o banco de dados
 
-\`\`\`bash
+
 # Execute o script de inicialização do banco de dados
 node backend/scripts/init-db.js
-\`\`\`
+
 
 ## ⚙️ Configuração
 
@@ -95,7 +95,7 @@ node backend/scripts/init-db.js
 
 Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
 
-\`\`\`env
+
 # Frontend
 NEXT_PUBLIC_API_URL=http://localhost:3000/api
 
@@ -108,7 +108,7 @@ DB_USER=root
 DB_PASSWORD=sua_senha_mysql
 DB_NAME=fleetflow
 DB_PORT=3306
-\`\`\`
+
 
 ## 🖥️ Uso
 
@@ -120,14 +120,14 @@ npm run backend
 # ou
 cd backend
 node server.js
-\`\`\`
+
 
 ### Iniciar o frontend
 
-\`\`\`bash
+
 # Na pasta raiz do projeto
 npm run dev
-\`\`\`
+
 
 ### Acessar a aplicação
 
@@ -137,14 +137,14 @@ Abra seu navegador e acesse:
 
 ### Credenciais padrão
 
-\`\`\`
+
 Email: admin@fleetflow.com
 Senha: admin123
-\`\`\`
+
 
 ## 📁 Estrutura do Projeto
 
-\`\`\`
+
 fleetflow/
 ├── app/                    # Arquivos do Next.js
 ├── backend/                # Código do servidor
@@ -163,7 +163,7 @@ fleetflow/
 ├── scripts/                # Scripts utilitários
 ├── styles/                 # Estilos globais
 └── types/                  # Definições de tipos TypeScript
-\`\`\`
+
 
 ## 🔌 API
 
@@ -204,10 +204,6 @@ Contribuições são bem-vindas! Para contribuir:
 ## 📄 Licença
 
 Este projeto está licenciado sob a licença MIT - veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
-## 📞 Suporte
-
-Para suporte, entre em contato pelo email: suporte@fleetflow.com
 
 ---
 
