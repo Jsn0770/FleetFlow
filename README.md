@@ -114,12 +114,8 @@ DB_PORT=3306
 
 ### Iniciar o backend
 
-\`\`\`bash
-# Na pasta raiz do projeto
-npm run backend
-# ou
 cd backend
-node server.js
+npm run dev
 
 
 ### Iniciar o frontend
