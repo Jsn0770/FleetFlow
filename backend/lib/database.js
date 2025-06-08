@@ -17,6 +17,8 @@ const dbConfig = {
   reconnect: true,
   waitForConnections: true,
   queueLimit: 0,
+  timezone: "-03:00", // Usar timezone brasileiro diretamente
+  dateStrings: false,
 }
 
 let pool = null
@@ -29,17 +31,19 @@ export async function getConnection() {
         user: dbConfig.user,
         database: dbConfig.database,
         port: dbConfig.port,
+        timezone: dbConfig.timezone,
         ssl: dbConfig.ssl ? "Configurado" : "Desativado",
       })
 
       pool = mysql.createPool(dbConfig)
       console.log("✅ Pool de conexões MySQL criado com sucesso!")
 
-      // Testar conexão
+      // Testar conexão e configurar timezone
       const connection = await pool.getConnection()
+      await connection.execute("SET time_zone = '-03:00'")
       await connection.ping()
       connection.release()
-      console.log("✅ Conexão MySQL testada com sucesso!")
+      console.log("✅ Conexão MySQL testada com sucesso! Timezone: -03:00")
     } catch (error) {
       console.error("❌ Erro ao criar pool MySQL:", error)
       console.error("⚠️ Verifique suas variáveis de ambiente:")
@@ -58,10 +62,12 @@ export async function getConnection() {
             password: "",
             database: "fleetflow",
             port: 3306,
+            timezone: "-03:00",
           }
 
           pool = mysql.createPool(defaultConfig)
           const connection = await pool.getConnection()
+          await connection.execute("SET time_zone = '-03:00'")
           await connection.ping()
           connection.release()
           console.log("✅ Conexão MySQL estabelecida com configurações padrão!")
@@ -107,7 +113,8 @@ export async function closeConnection() {
 export async function healthCheck() {
   try {
     const conn = await getConnection()
-    const [result] = await conn.execute("SELECT 1 as health")
+    const [result] = await conn.execute("SELECT 1 as health, NOW() as server_time")
+    console.log("🕐 Horário do servidor MySQL:", result[0].server_time)
     return result[0].health === 1
   } catch (error) {
     console.error("❌ Health check falhou:", error)
@@ -118,6 +125,23 @@ export async function healthCheck() {
 // Função para testar conexão (alias para healthCheck)
 export async function testConnection() {
   return await healthCheck()
+}
+
+// Função para configurar timezone em todas as conexões
+export async function configureTimezone() {
+  try {
+    const connection = await getConnection()
+    await connection.execute("SET time_zone = '-03:00'")
+    await connection.execute(
+      "SET sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'",
+    )
+
+    // Verificar timezone configurado
+    const [result] = await connection.execute("SELECT @@session.time_zone as timezone, NOW() as server_time")
+    console.log("✅ Timezone configurado:", result[0].timezone, "- Hora atual:", result[0].server_time)
+  } catch (error) {
+    console.error("❌ Erro ao configurar timezone:", error)
+  }
 }
 
 // Função para inicializar o banco de dados
@@ -131,6 +155,7 @@ export async function initializeDatabase() {
 
     try {
       const tempConnection = await mysql.createConnection(tempConfig)
+      await tempConnection.execute("SET time_zone = '-03:00'")
       await tempConnection.execute(
         `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
       )
@@ -143,6 +168,9 @@ export async function initializeDatabase() {
 
     // Agora conectar ao banco específico
     const conn = await getConnection()
+
+    // Configurar timezone primeiro
+    await configureTimezone()
 
     // Criar tabela de gestores
     await conn.execute(`
