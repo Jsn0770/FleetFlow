@@ -103,6 +103,8 @@ router.post("/create", async (req, res) => {
         tabelas: tabelasParaBackup,
         data_criacao: new Date().toISOString(),
         versao: "1.0",
+        timezone: "America/Sao_Paulo",
+        timezone_offset: "-03:00",
       },
       dados: {},
     }
@@ -112,8 +114,31 @@ router.post("/create", async (req, res) => {
     // Fazer backup de cada tabela
     for (const tabela of tabelasParaBackup) {
       try {
-        const rows = await executeQuery(`SELECT * FROM ${tabela}`)
-        backupData.dados[tabela] = rows
+        let query = `SELECT * FROM ${tabela}`
+
+        // Para eventos, salvar a data exatamente como está no banco (já em -03:00)
+        if (tabela === "eventos") {
+          query = `SELECT 
+            id, motorista_id, carro_id, gestor_id, tipo, odometro, 
+            telefone_motorista, observacoes,
+            data_hora,
+            DATE_FORMAT(data_hora, '%Y-%m-%d %H:%i:%s') as data_hora_string
+            FROM ${tabela}`
+        }
+
+        const rows = await executeQuery(query)
+
+        // Para eventos, garantir que salvamos a data como string no formato correto
+        if (tabela === "eventos") {
+          backupData.dados[tabela] = rows.map((row) => ({
+            ...row,
+            data_hora_backup: row.data_hora_string, // Usar a string formatada
+            data_hora_original: row.data_hora, // Manter o original também
+          }))
+        } else {
+          backupData.dados[tabela] = rows
+        }
+
         totalRegistros += rows.length
         console.log(`✅ Backup da tabela ${tabela}: ${rows.length} registros`)
       } catch (error) {
@@ -240,33 +265,82 @@ router.post("/restore/:id", async (req, res) => {
 
     let totalRestaurado = 0
 
-    // Restaurar cada tabela
-    for (const tabela of tabelasParaRestaurar) {
-      if (!backupData.dados[tabela]) continue
+    // Desabilitar verificações de chave estrangeira
+    await executeQuery("SET FOREIGN_KEY_CHECKS = 0")
 
-      try {
-        // Limpar tabela atual
-        await executeQuery(`DELETE FROM ${tabela}`)
+    try {
+      // Restaurar cada tabela
+      for (const tabela of tabelasParaRestaurar) {
+        if (!backupData.dados[tabela]) continue
 
-        const dados = backupData.dados[tabela]
+        try {
+          // Limpar tabela atual
+          await executeQuery(`DELETE FROM ${tabela}`)
 
-        if (dados.length > 0) {
-          // Obter colunas da primeira linha
-          const colunas = Object.keys(dados[0])
-          const placeholders = colunas.map(() => "?").join(",")
+          // Reset AUTO_INCREMENT se a tabela tiver
+          await executeQuery(`ALTER TABLE ${tabela} AUTO_INCREMENT = 1`)
 
-          // Inserir dados
-          for (const linha of dados) {
-            const valores = colunas.map((col) => linha[col])
-            await executeQuery(`INSERT INTO ${tabela} (${colunas.join(",")}) VALUES (${placeholders})`, valores)
+          const dados = backupData.dados[tabela]
+
+          if (dados.length > 0) {
+            // Tratamento especial para eventos
+            if (tabela === "eventos") {
+              for (const linha of dados) {
+                // Usar data_hora_backup se disponível (formato string correto)
+                // Senão usar data_hora_string, senão data_hora
+                let dataHora = linha.data_hora_backup || linha.data_hora_string || linha.data_hora
+
+                // Se for um objeto Date, converter para string no formato MySQL
+                if (dataHora instanceof Date) {
+                  dataHora = dataHora.toISOString().slice(0, 19).replace("T", " ")
+                }
+
+                // Se for string ISO, converter para formato MySQL
+                if (typeof dataHora === "string" && dataHora.includes("T")) {
+                  dataHora = dataHora.slice(0, 19).replace("T", " ")
+                }
+
+                console.log(`🔄 Restaurando evento ${linha.id} com data: ${dataHora}`)
+
+                await executeQuery(
+                  `INSERT INTO eventos (id, motorista_id, carro_id, gestor_id, tipo, odometro, telefone_motorista, observacoes, data_hora) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [
+                    linha.id,
+                    linha.motorista_id,
+                    linha.carro_id,
+                    linha.gestor_id,
+                    linha.tipo,
+                    linha.odometro,
+                    linha.telefone_motorista,
+                    linha.observacoes,
+                    dataHora,
+                  ],
+                )
+              }
+            } else {
+              // Para outras tabelas, usar método genérico
+              const colunas = Object.keys(dados[0]).filter(
+                (col) => !col.endsWith("_backup") && !col.endsWith("_string") && !col.endsWith("_original"),
+              )
+              const placeholders = colunas.map(() => "?").join(",")
+
+              for (const linha of dados) {
+                const valores = colunas.map((col) => linha[col])
+                await executeQuery(`INSERT INTO ${tabela} (${colunas.join(",")}) VALUES (${placeholders})`, valores)
+              }
+            }
+
+            totalRestaurado += dados.length
+            console.log(`✅ Restaurada tabela ${tabela}: ${dados.length} registros`)
           }
-
-          totalRestaurado += dados.length
-          console.log(`✅ Restaurada tabela ${tabela}: ${dados.length} registros`)
+        } catch (error) {
+          console.error(`❌ Erro ao restaurar tabela ${tabela}:`, error.message)
         }
-      } catch (error) {
-        console.error(`❌ Erro ao restaurar tabela ${tabela}:`, error.message)
       }
+    } finally {
+      // Reabilitar verificações de chave estrangeira
+      await executeQuery("SET FOREIGN_KEY_CHECKS = 1")
     }
 
     // Log de restauração de backup
@@ -504,6 +578,8 @@ async function criarBackupSeguranca({ nome, descricao, tabelas, tipo }) {
       tabelas: tabelasParaBackup,
       data_criacao: new Date().toISOString(),
       versao: "1.0",
+      timezone: "America/Sao_Paulo",
+      timezone_offset: "-03:00",
     },
     dados: {},
   }
@@ -512,8 +588,31 @@ async function criarBackupSeguranca({ nome, descricao, tabelas, tipo }) {
 
   for (const tabela of tabelasParaBackup) {
     try {
-      const rows = await executeQuery(`SELECT * FROM ${tabela}`)
-      backupData.dados[tabela] = rows
+      let query = `SELECT * FROM ${tabela}`
+
+      // Para eventos, salvar a data exatamente como está no banco
+      if (tabela === "eventos") {
+        query = `SELECT 
+          id, motorista_id, carro_id, gestor_id, tipo, odometro, 
+          telefone_motorista, observacoes,
+          data_hora,
+          DATE_FORMAT(data_hora, '%Y-%m-%d %H:%i:%s') as data_hora_string
+          FROM ${tabela}`
+      }
+
+      const rows = await executeQuery(query)
+
+      // Para eventos, garantir que salvamos a data como string no formato correto
+      if (tabela === "eventos") {
+        backupData.dados[tabela] = rows.map((row) => ({
+          ...row,
+          data_hora_backup: row.data_hora_string, // Usar a string formatada
+          data_hora_original: row.data_hora, // Manter o original também
+        }))
+      } else {
+        backupData.dados[tabela] = rows
+      }
+
       totalRegistros += rows.length
     } catch (error) {
       console.warn(`Erro ao fazer backup da tabela ${tabela}:`, error.message)
@@ -574,7 +673,153 @@ async function limparBackupsAntigos() {
       await executeQuery("DELETE FROM backups WHERE id = ?", [backup.id])
     }
 
-    if (backupsAntigos.length > 0) {
+    if (backupsAntigos.length > 0) {const express = require("express")
+const router = express.Router()
+const { executeQuery } = require("../services/db")
+const moment = require("moment")
+const fs = require("fs").promises
+const path = require("path")
+
+// Função para realizar backup de uma tabela
+async function backupTable(tabela) {
+  try {
+    let query = `SELECT * FROM ${tabela} ORDER BY id`
+    let dados = await executeQuery(query)
+
+    // Para eventos, usar formato específico que preserva o timezone
+    if (tabela === "eventos") {
+      query = `
+        SELECT 
+          id, motorista_id, carro_id, gestor_id, tipo, odometro, telefone_motorista, observacoes,
+          DATE_FORMAT(CONVERT_TZ(data_hora, '+00:00', '-03:00'), '%Y-%m-%d %H:%i:%s') as data_hora_backup,
+          data_hora as data_hora_original
+        FROM eventos 
+        ORDER BY id
+      `
+
+      dados = await executeQuery(query)
+
+      // Mapear dados para usar data_hora_backup
+      dados = dados.map((evento) => ({
+        ...evento,
+        data_hora: evento.data_hora_backup,
+      }))
+
+      // Remover campos auxiliares
+      dados = dados.map(({ data_hora_backup, data_hora_original, ...resto }) => resto)
+    }
+
+    return { tabela, dados }
+  } catch (error) {
+    console.error(`Erro ao fazer backup da tabela ${tabela}:`, error)
+    throw error
+  }
+}
+
+// Função para restaurar uma tabela
+async function restoreTable(tabela, dados) {
+  try {
+    if (!dados || dados.length === 0) {
+      console.warn(`Aviso: Nenhum dado para restaurar na tabela ${tabela}.`)
+      return
+    }
+
+    // Restauração especial para eventos
+    if (tabela === "eventos") {
+      for (const evento of dados) {
+        try {
+          await executeQuery(
+            `INSERT INTO eventos (id, motorista_id, carro_id, gestor_id, tipo, odometro, telefone_motorista, observacoes, data_hora) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, CONVERT_TZ(?, '-03:00', '+00:00'))`,
+            [
+              evento.id,
+              evento.motorista_id,
+              evento.carro_id,
+              evento.gestor_id,
+              evento.tipo,
+              evento.odometro,
+              evento.telefone_motorista,
+              evento.observacoes,
+              evento.data_hora,
+            ],
+          )
+          console.log(`✅ Evento ${evento.id} restaurado com data: ${evento.data_hora}`)
+        } catch (error) {
+          console.error(`❌ Erro ao restaurar evento ${evento.id}:`, error)
+          throw error
+        }
+      }
+      return // Pular o processamento normal para eventos
+    }
+
+    const colunas = Object.keys(dados[0])
+    const placeholders = colunas.map(() => "?").join(", ")
+    const query = `INSERT INTO ${tabela} (${colunas.join(", ")}) VALUES (${placeholders})`
+
+    for (const item of dados) {
+      const valores = colunas.map((coluna) => item[coluna])
+      try {
+        await executeQuery(query, valores)
+      } catch (error) {
+        console.error(`Erro ao inserir registro na tabela ${tabela}:`, error)
+        throw error // Rejeita a promise para interromper a restauração
+      }
+    }
+
+    console.log(`Tabela ${tabela} restaurada com sucesso.`)
+  } catch (error) {
+    console.error(`Erro ao restaurar a tabela ${tabela}:`, error)
+    throw error
+  }
+}
+
+// Rota para realizar o backup de todas as tabelas
+router.get("/backup", async (req, res) => {
+  try {
+    const tabelas = ["carros", "clientes", "eventos", "gestores", "motoristas", "usuarios"]
+    const dataBackup = moment().format("YYYYMMDD_HHmmss")
+    const nomeArquivo = `backup_${dataBackup}.json`
+    const caminhoArquivo = path.join(__dirname, "..", "backups", nomeArquivo)
+
+    const backups = []
+    for (const tabela of tabelas) {
+      const backup = await backupTable(tabela)
+      backups.push(backup)
+    }
+
+    await fs.writeFile(caminhoArquivo, JSON.stringify(backups, null, 2))
+
+    console.log(`Backup completo realizado e salvo em ${caminhoArquivo}`)
+    res.status(200).json({ message: "Backup realizado com sucesso!", arquivo: nomeArquivo })
+  } catch (error) {
+    console.error("Erro ao realizar o backup:", error)
+    res.status(500).json({ error: "Erro ao realizar o backup." })
+  }
+})
+
+// Rota para restaurar o banco de dados a partir de um arquivo de backup
+router.post("/restore", async (req, res) => {
+  try {
+    const { nomeArquivo } = req.body
+    const caminhoArquivo = path.join(__dirname, "..", "backups", nomeArquivo)
+
+    const data = await fs.readFile(caminhoArquivo, "utf8")
+    const backups = JSON.parse(data)
+
+    for (const backup of backups) {
+      await restoreTable(backup.tabela, backup.dados)
+    }
+
+    console.log("Restauração completa realizada com sucesso.")
+    res.status(200).json({ message: "Restauração realizada com sucesso!" })
+  } catch (error) {
+    console.error("Erro ao restaurar o banco de dados:", error)
+    res.status(500).json({ error: "Erro ao restaurar o banco de dados." })
+  }
+})
+
+module.exports = router
+
       console.log(`🧹 Removidos ${backupsAntigos.length} backups automáticos antigos`)
     }
   } catch (error) {
