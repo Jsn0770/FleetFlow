@@ -354,7 +354,7 @@ export default function Relatorios() {
             saida.motoristaId === chegada.motoristaId &&
             saida.carroId === chegada.carroId &&
             new Date(saida.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")) <
-              new Date(chegada.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")),
+            new Date(chegada.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")),
         )
         .sort(
           (a, b) =>
@@ -362,7 +362,11 @@ export default function Relatorios() {
             new Date(a.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")),
         )[0]
 
-      if (saidaCorrespondente && chegada.odometro && saidaCorrespondente.odometro) {
+      if (
+        saidaCorrespondente &&
+        chegada.odometro != null &&
+        saidaCorrespondente.odometro != null
+      ) {
         const km = chegada.odometro - saidaCorrespondente.odometro
         if (km > 0) {
           quilometragemTotal += km
@@ -370,7 +374,6 @@ export default function Relatorios() {
         }
       }
     })
-
     return {
       totalEventos: eventosFiltrados.length,
       totalSaidas: saidas.length,
@@ -415,7 +418,7 @@ export default function Relatorios() {
             saida.motoristaId === chegada.motoristaId &&
             saida.carroId === chegada.carroId &&
             new Date(saida.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")) <
-              new Date(chegada.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")),
+            new Date(chegada.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")),
         )
         .sort(
           (a, b) =>
@@ -423,9 +426,13 @@ export default function Relatorios() {
             new Date(a.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")),
         )[0]
 
-      if (saidaCorrespondente && chegada.odometro && saidaCorrespondente.odometro) {
+      if (
+        saidaCorrespondente &&
+        chegada.odometro != null &&
+        saidaCorrespondente.odometro != null
+      ) {
         const km = chegada.odometro - saidaCorrespondente.odometro
-        if (km > 0 && agrupamento[chegada.motoristaId]) {
+        if (km > 0) {
           agrupamento[chegada.motoristaId].quilometragem += km
           agrupamento[chegada.motoristaId].viagensCompletas++
         }
@@ -472,7 +479,7 @@ export default function Relatorios() {
           (saida) =>
             saida.carroId === chegada.carroId &&
             new Date(saida.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")) <
-              new Date(chegada.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")),
+            new Date(chegada.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")),
         )
         .sort(
           (a, b) =>
@@ -480,9 +487,13 @@ export default function Relatorios() {
             new Date(a.dataHora.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")),
         )[0]
 
-      if (saidaCorrespondente && chegada.odometro && saidaCorrespondente.odometro) {
+      if (
+        saidaCorrespondente &&
+        chegada.odometro != null &&
+        saidaCorrespondente.odometro != null
+      ) {
         const km = chegada.odometro - saidaCorrespondente.odometro
-        if (km > 0 && agrupamento[chegada.carroId]) {
+        if (km > 0) {
           agrupamento[chegada.carroId].quilometragem += km
           agrupamento[chegada.carroId].viagensCompletas++
         }
@@ -912,7 +923,7 @@ export default function Relatorios() {
 
       toast({
         title: "Sucesso",
-        description: "Relatório Excel formatado exportado com sucesso",
+        description: "Relatório Excel exportado com sucesso",
       })
     } catch (error) {
       console.error("Erro ao exportar Excel:", error)
@@ -1073,7 +1084,7 @@ export default function Relatorios() {
                     ) : (
                       <>
                         <FileSpreadsheet className="w-4 h-4" />
-                        <span>Excel Formatado (.xlsx)</span>
+                        <span>Excel (.xlsx)</span>
                       </>
                     )}
                   </DropdownMenuItem>
@@ -1246,20 +1257,19 @@ export default function Relatorios() {
                 <Badge variant="outline" className="px-3 py-1">
                   {motoristaFiltro === "todos"
                     ? "Todos os motoristas"
-                    : `Motorista: ${
-                        motoristas.find((m) => m.id.toString() === motoristaFiltro)?.nome || "Não encontrado"
-                      }`}
+                    : `Motorista: ${motoristas.find((m) => m.id.toString() === motoristaFiltro)?.nome || "Não encontrado"
+                    }`}
                 </Badge>
 
                 <Badge variant="outline" className="px-3 py-1">
                   {carroFiltro === "todos"
                     ? "Todos os carros"
                     : (() => {
-                        const carroSelecionado = carros.find((c) => c.id.toString() === carroFiltro)
-                        return carroSelecionado
-                          ? `Carro: ${carroSelecionado.marca} ${carroSelecionado.modelo} - ${carroSelecionado.placa}`
-                          : "Carro: Não encontrado"
-                      })()}
+                      const carroSelecionado = carros.find((c) => c.id.toString() === carroFiltro)
+                      return carroSelecionado
+                        ? `Carro: ${carroSelecionado.marca} ${carroSelecionado.modelo} - ${carroSelecionado.placa}`
+                        : "Carro: Não encontrado"
+                    })()}
                 </Badge>
 
                 <Badge variant="outline" className="px-3 py-1">
