@@ -1,6 +1,6 @@
 import express from "express"
 import { executeQuery } from "../lib/database.js"
-import logger from "../lib/logger.js" // Import logger
+import logger from "../lib/logger.js"
 
 const router = express.Router()
 
@@ -46,7 +46,19 @@ router.get("/", async (req, res) => {
     console.log("📊 GET /api/eventos - Buscando eventos...")
     const { tipo, motorista_id, carro_id, data_inicio, data_fim, limit = 50, busca } = req.query
 
-    let query = `SELECT e.id, e.tipo, e.odometro, e.telefone_motorista, e.observacoes, e.motorista_id, e.carro_id, e.gestor_id, DATE_FORMAT(e.data_hora, '%d/%m/%Y %H:%i:%s') as data_hora, m.nome as motorista_nome, m.cnh as motorista_cnh, c.marca as carro_marca, c.modelo as carro_modelo, c.placa as carro_placa, CONCAT(c.marca, ' ', c.modelo, ' - ', c.placa) as carro_info, g.nome as gestor_nome FROM eventos e INNER JOIN motoristas m ON e.motorista_id = m.id INNER JOIN carros c ON e.carro_id = c.id INNER JOIN gestores g ON e.gestor_id = g.id`
+    let query = `SELECT 
+  e.id, e.tipo, e.odometro, e.telefone_motorista, e.observacoes, 
+  e.motorista_id, e.carro_id, e.gestor_id, 
+  DATE_FORMAT(e.data_hora, '%d/%m/%Y %H:%i:%s') as data_hora,
+  e.data_hora as data_hora_raw,
+  m.nome as motorista_nome, m.cnh as motorista_cnh, m.status as motorista_status,
+  c.marca as carro_marca, c.modelo as carro_modelo, c.placa as carro_placa, c.status as carro_status,
+  CONCAT(c.marca, ' ', c.modelo, ' - ', c.placa) as carro_info, 
+  g.nome as gestor_nome 
+FROM eventos e 
+INNER JOIN motoristas m ON e.motorista_id = m.id 
+INNER JOIN carros c ON e.carro_id = c.id 
+INNER JOIN gestores g ON e.gestor_id = g.id`
     const params = []
     const conditions = []
 
@@ -180,16 +192,29 @@ router.post("/", async (req, res) => {
         })
       }
 
-      // Verificar se motorista já está em viagem
+      // Verificar se motorista já está em viagem usando comparação direta de IDs
       const motoristaEmViagem = await executeQuery(
-        `SELECT COUNT(*) as total FROM eventos WHERE motorista_id = ? AND tipo = 'Saída' AND NOT EXISTS (SELECT 1 FROM eventos e2 WHERE e2.motorista_id = eventos.motorista_id AND e2.tipo = 'Chegada' AND e2.data_hora > eventos.data_hora)`,
+        `SELECT e1.id, e1.data_hora, e1.motorista_id, e1.carro_id
+         FROM eventos e1 
+         WHERE e1.motorista_id = ? 
+         AND e1.tipo = 'Saída' 
+         AND NOT EXISTS (
+           SELECT 1 FROM eventos e2 
+           WHERE e2.motorista_id = e1.motorista_id 
+           AND e2.tipo = 'Chegada' 
+           AND e2.data_hora > e1.data_hora
+         )
+         ORDER BY e1.data_hora DESC 
+         LIMIT 1`,
         [motorista_id],
       )
 
-      if (motoristaEmViagem[0].total > 0) {
+      if (motoristaEmViagem.length > 0) {
+        console.log("❌ Motorista já em viagem:", motoristaEmViagem[0])
         return res.status(400).json({
           success: false,
           error: "Motorista já está em viagem",
+          viagem_ativa: motoristaEmViagem[0],
         })
       }
     }
@@ -198,14 +223,32 @@ router.post("/", async (req, res) => {
     if (tipo === "Chegada") {
       // Verificar se existe saída sem chegada para este motorista
       const saidaSemChegada = await executeQuery(
-        `SELECT e.id, e.odometro as odometro_saida, c.marca, c.modelo FROM eventos e INNER JOIN carros c ON e.carro_id = c.id WHERE e.motorista_id = ? AND e.tipo = 'Saída' AND NOT EXISTS (SELECT 1 FROM eventos e2 WHERE e2.motorista_id = e.motorista_id AND e2.tipo = 'Chegada' AND e2.data_hora > e.data_hora) ORDER BY e.data_hora DESC LIMIT 1`,
+        `SELECT e.id, e.odometro as odometro_saida, e.data_hora, c.marca, c.modelo, c.placa
+         FROM eventos e 
+         INNER JOIN carros c ON e.carro_id = c.id 
+         WHERE e.motorista_id = ? 
+         AND e.tipo = 'Saída' 
+         AND NOT EXISTS (
+           SELECT 1 FROM eventos e2 
+           WHERE e2.motorista_id = e.motorista_id 
+           AND e2.tipo = 'Chegada' 
+           AND e2.data_hora > e.data_hora
+         ) 
+         ORDER BY e.data_hora DESC 
+         LIMIT 1`,
         [motorista_id],
       )
+
+      console.log("🔍 Verificando saída sem chegada para motorista", motorista_id, ":", saidaSemChegada)
 
       if (saidaSemChegada.length === 0) {
         return res.status(400).json({
           success: false,
           error: "Não há saída registrada para este motorista",
+          debug: {
+            motorista_id,
+            motorista_nome: motorista[0].nome,
+          },
         })
       }
 
@@ -227,7 +270,7 @@ router.post("/", async (req, res) => {
         carro_id,
         gestor_id,
         tipo,
-        // CORREÇÃO: Para saídas, usar o odômetro atual do carro (mesmo que seja 0)
+        // Para saídas, usar o odômetro atual do carro
         // Para chegadas, usar o odômetro fornecido pelo usuário
         tipo === "Saída" ? carro[0].odometro || 0 : odometro || carro[0].odometro,
         telefone_motorista,
@@ -243,7 +286,7 @@ router.post("/", async (req, res) => {
       await executeQuery("UPDATE carros SET status = 'Disponível' WHERE id = ?", [carro_id])
       await executeQuery("UPDATE motoristas SET status = 'Ativo' WHERE id = ?", [motorista_id])
 
-      // CORREÇÃO: Sempre atualizar odômetro do carro na chegada
+      // Sempre atualizar odômetro do carro na chegada
       if (odometro && odometro > 0) {
         await executeQuery("UPDATE carros SET odometro = ? WHERE id = ?", [odometro, carro_id])
       }
@@ -251,7 +294,16 @@ router.post("/", async (req, res) => {
 
     // Buscar evento inserido com dados completos
     const novoEvento = await executeQuery(
-      `SELECT e.id, e.tipo, e.odometro, e.telefone_motorista, e.observacoes, DATE_FORMAT(e.data_hora, '%d/%m/%Y %H:%i:%s') as data_hora, m.nome as motorista_nome, m.cnh as motorista_cnh, c.marca as carro_marca, c.modelo as carro_modelo, c.placa as carro_placa, g.nome as gestor_nome FROM eventos e INNER JOIN motoristas m ON e.motorista_id = m.id INNER JOIN carros c ON e.carro_id = c.id INNER JOIN gestores g ON e.gestor_id = g.id WHERE e.id = ?`,
+      `SELECT e.id, e.tipo, e.odometro, e.telefone_motorista, e.observacoes, 
+       DATE_FORMAT(e.data_hora, '%d/%m/%Y %H:%i:%s') as data_hora, 
+       m.nome as motorista_nome, m.cnh as motorista_cnh, 
+       c.marca as carro_marca, c.modelo as carro_modelo, c.placa as carro_placa, 
+       g.nome as gestor_nome 
+       FROM eventos e 
+       INNER JOIN motoristas m ON e.motorista_id = m.id 
+       INNER JOIN carros c ON e.carro_id = c.id 
+       INNER JOIN gestores g ON e.gestor_id = g.id 
+       WHERE e.id = ?`,
       [result.insertId],
     )
 
@@ -294,18 +346,43 @@ router.get("/dashboard", async (req, res) => {
 
     // Eventos recentes (últimos 10)
     const eventosRecentes = await executeQuery(
-      `SELECT e.id, e.tipo, e.odometro, DATE_FORMAT(e.data_hora, '%d/%m/%Y %H:%i:%s') as data_hora, m.nome as motorista_nome, c.marca as carro_marca, c.modelo as carro_modelo, c.placa as carro_placa FROM eventos e INNER JOIN motoristas m ON e.motorista_id = m.id INNER JOIN carros c ON e.carro_id = c.id ORDER BY e.data_hora DESC LIMIT 10`,
+      `SELECT e.id, e.tipo, e.odometro, 
+       DATE_FORMAT(e.data_hora, '%d/%m/%Y %H:%i:%s') as data_hora, 
+       m.nome as motorista_nome, 
+       c.marca as carro_marca, c.modelo as carro_modelo, c.placa as carro_placa 
+       FROM eventos e 
+       INNER JOIN motoristas m ON e.motorista_id = m.id 
+       INNER JOIN carros c ON e.carro_id = c.id 
+       ORDER BY e.data_hora DESC LIMIT 10`,
     )
 
     // Carros em uso
     const carrosEmUso = await executeQuery(
-      `SELECT c.id, c.marca, c.modelo, c.placa, m.nome as motorista_nome, DATE_FORMAT(e.data_hora, '%d/%m/%Y %H:%i:%s') as saida_em FROM carros c INNER JOIN eventos e ON c.id = e.carro_id INNER JOIN motoristas m ON e.motorista_id = m.id WHERE c.status = 'Em Uso' AND e.tipo = 'Saída' AND NOT EXISTS (SELECT 1 FROM eventos e2 WHERE e2.carro_id = c.id AND e2.tipo = 'Chegada' AND e2.data_hora > e.data_hora)`,
+      `SELECT c.id, c.marca, c.modelo, c.placa, 
+       m.nome as motorista_nome, 
+       DATE_FORMAT(e.data_hora, '%d/%m/%Y %H:%i:%s') as saida_em 
+       FROM carros c 
+       INNER JOIN eventos e ON c.id = e.carro_id 
+       INNER JOIN motoristas m ON e.motorista_id = m.id 
+       WHERE c.status = 'Em Uso' 
+       AND e.tipo = 'Saída' 
+       AND NOT EXISTS (
+         SELECT 1 FROM eventos e2 
+         WHERE e2.carro_id = c.id 
+         AND e2.tipo = 'Chegada' 
+         AND e2.data_hora > e.data_hora
+       )`,
     )
 
     // Estatísticas do dia
     const hoje = new Date().toISOString().split("T")[0]
     const estatisticasHoje = await executeQuery(
-      `SELECT COUNT(CASE WHEN tipo = 'Saída' THEN 1 END) as saidas_hoje, COUNT(CASE WHEN tipo = 'Chegada' THEN 1 END) as chegadas_hoje, COUNT(*) as total_eventos_hoje FROM eventos WHERE DATE(data_hora) = ?`,
+      `SELECT 
+       COUNT(CASE WHEN tipo = 'Saída' THEN 1 END) as saidas_hoje, 
+       COUNT(CASE WHEN tipo = 'Chegada' THEN 1 END) as chegadas_hoje, 
+       COUNT(*) as total_eventos_hoje 
+       FROM eventos 
+       WHERE DATE(data_hora) = ?`,
       [hoje],
     )
 
