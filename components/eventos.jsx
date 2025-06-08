@@ -92,7 +92,7 @@ export default function Eventos() {
     if (tipoEvento === "Chegada" && motoristaId) {
       const ultimaSaida = eventos
         .filter((e) => e.motorista_id === Number.parseInt(motoristaId) && e.tipo === "Saída")
-        .sort((a, b) => new Date(b.data_hora) - new Date(a.data_hora))[0]
+        .sort((a, b) => new Date(b.data_hora_raw || b.data_hora) - new Date(a.data_hora_raw || a.data_hora))[0]
 
       if (ultimaSaida) {
         setCarroId(ultimaSaida.carro_id.toString())
@@ -105,7 +105,7 @@ export default function Eventos() {
     if (tipoEvento === "Chegada" && carroId && !motoristaId) {
       const ultimaSaida = eventos
         .filter((e) => e.carro_id === Number.parseInt(carroId) && e.tipo === "Saída")
-        .sort((a, b) => new Date(b.data_hora) - new Date(a.data_hora))[0]
+        .sort((a, b) => new Date(b.data_hora_raw || b.data_hora) - new Date(a.data_hora_raw || a.data_hora))[0]
 
       if (ultimaSaida) {
         setMotoristaId(ultimaSaida.motorista_id.toString())
@@ -191,9 +191,14 @@ export default function Eventos() {
     }
   }
 
-  // Converter data brasileira para Date
-  const converterDataBrasileiraParaDate = (dataHoraBrasileira) => {
-    const [dataParte, horaParte] = dataHoraBrasileira.split(" ")
+  // Converter data brasileira para Date usando data_hora_raw quando disponível
+  const converterDataParaDate = (evento) => {
+    if (evento.data_hora_raw) {
+      return new Date(evento.data_hora_raw)
+    }
+
+    // Fallback para formato brasileiro
+    const [dataParte, horaParte] = evento.data_hora.split(" ")
     const [dia, mes, ano] = dataParte.split("/")
     return new Date(`${ano}-${mes}-${dia} ${horaParte}`)
   }
@@ -202,7 +207,7 @@ export default function Eventos() {
   const verificarViagemAtiva = (evento) => {
     if (evento.tipo !== "Saída") return false
 
-    const dataEventoSaida = converterDataBrasileiraParaDate(evento.data_hora)
+    const dataEventoSaida = converterDataParaDate(evento)
 
     // Buscar chegadas do mesmo motorista e carro posteriores a esta saída
     const chegadaPosterior = eventos.find((e) => {
@@ -210,7 +215,7 @@ export default function Eventos() {
         return false
       }
 
-      const dataChegada = converterDataBrasileiraParaDate(e.data_hora)
+      const dataChegada = converterDataParaDate(e)
       return dataChegada > dataEventoSaida
     })
 
@@ -221,14 +226,14 @@ export default function Eventos() {
   const verificarViagemFinalizada = (evento) => {
     if (evento.tipo === "Chegada") {
       // Para chegadas, verificar se há uma saída anterior correspondente
-      const dataEventoChegada = converterDataBrasileiraParaDate(evento.data_hora)
+      const dataEventoChegada = converterDataParaDate(evento)
 
       const saidaAnterior = eventos.find((e) => {
         if (e.tipo !== "Saída" || e.motorista_id !== evento.motorista_id || e.carro_id !== evento.carro_id) {
           return false
         }
 
-        const dataSaida = converterDataBrasileiraParaDate(e.data_hora)
+        const dataSaida = converterDataParaDate(e)
         return dataSaida < dataEventoChegada
       })
 
@@ -318,6 +323,16 @@ export default function Eventos() {
 
   // Preencher formulário com dados da saída em andamento
   const preencherFormularioComSaida = (eventoSaida) => {
+    // Verificar se realmente é uma saída ativa
+    if (!verificarViagemAtiva(eventoSaida)) {
+      toast({
+        title: "Erro",
+        description: "Esta viagem já foi finalizada ou não está ativa.",
+        variant: "destructive",
+      })
+      return
+    }
+
     // Mudar para tipo chegada
     setTipoEvento("Chegada")
 
