@@ -17,7 +17,7 @@ const dbConfig = {
   reconnect: true,
   waitForConnections: true,
   queueLimit: 0,
-  timezone: "-03:00", // Usar timezone brasileiro diretamente
+  timezone: "-03:00",
   dateStrings: false,
 }
 
