@@ -105,12 +105,19 @@ NEXT_PUBLIC_API_URL=http://localhost:3000/api
 
 # Backend
 PORT=3000
+
 FRONTEND_URL=http://localhost:5000
+
 JWT_SECRET=sua_chave_secreta_jwt
+
 DB_HOST=localhost
+
 DB_USER=root
+
 DB_PASSWORD=sua_senha_mysql
+
 DB_NAME=fleetflow
+
 DB_PORT=3306
 
 
