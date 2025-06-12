@@ -141,30 +141,6 @@ Abra seu navegador e acesse:
 Email: admin@fleetflow.com
 Senha: admin123
 
-
-## 📁 Estrutura do Projeto
-
-
-fleetflow/
-├── app/                    # Arquivos do Next.js
-├── backend/                # Código do servidor
-│   ├── lib/                # Bibliotecas e utilitários
-│   ├── middleware/         # Middlewares Express
-│   ├── routes/             # Rotas da API
-│   ├── scripts/            # Scripts de inicialização
-│   ├── uploads/            # Arquivos enviados
-│   └── server.js           # Ponto de entrada do servidor
-├── components/             # Componentes React
-│   ├── ui/                 # Componentes de UI reutilizáveis
-│   └── ...                 # Componentes específicos
-├── hooks/                  # React Hooks personalizados
-├── lib/                    # Utilitários do frontend
-├── public/                 # Arquivos estáticos
-├── scripts/                # Scripts utilitários
-├── styles/                 # Estilos globais
-└── types/                  # Definições de tipos TypeScript
-
-
 ## 🔌 API
 
 A API do FleetFlow segue os princípios RESTful e está disponível em `http://localhost:3000/api`.
@@ -190,16 +166,6 @@ Para mais detalhes sobre os endpoints, consulte a documentação da API no arqui
 - Validação de dados em todas as requisições
 - Proteção contra SQL Injection
 - Logs de segurança
-
-## 🤝 Contribuição
-
-Contribuições são bem-vindas! Para contribuir:
-
-1. Faça um fork do projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/nova-funcionalidade`)
-3. Faça commit das suas alterações (`git commit -m 'Adiciona nova funcionalidade'`)
-4. Faça push para a branch (`git push origin feature/nova-funcionalidade`)
-5. Abra um Pull Request
 
 ## 📄 Licença
 
