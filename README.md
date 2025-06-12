@@ -65,6 +65,8 @@ FleetFlow é uma aplicação web full-stack que permite o gerenciamento completo
 
 
 git clone https://github.com/Jsn0770/FleetFlow.git
+
+
 cd fleetflow
 
 
@@ -78,8 +80,10 @@ npm install --force
 
 
 cd backend
+
+
 npm install
-cd ..
+
 
 
 ### 4. Configure o banco de dados
