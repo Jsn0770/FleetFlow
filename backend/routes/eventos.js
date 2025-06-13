@@ -339,6 +339,229 @@ router.post("/", async (req, res) => {
   }
 })
 
+// PUT /api/eventos/:id - Editar um evento existente
+router.put("/:id", async (req, res) => {
+  try {
+    const { id } = req.params
+    const { telefone_motorista, observacoes, odometro } = req.body
+    const gestorId = req.user?.id || null
+
+    console.log(`✏️ PUT /api/eventos/${id} - Editando evento...`)
+    console.log("📦 Body:", req.body)
+
+    // Verificar se o evento existe
+    const verificaEvento = await executeQuery(
+      `SELECT e.*, 
+       m.nome as motorista_nome, 
+       c.marca as carro_marca, c.modelo as carro_modelo, c.placa as carro_placa,
+       g.nome as gestor_nome
+       FROM eventos e
+       INNER JOIN motoristas m ON e.motorista_id = m.id
+       INNER JOIN carros c ON e.carro_id = c.id
+       INNER JOIN gestores g ON e.gestor_id = g.id
+       WHERE e.id = ?`,
+      [id],
+    )
+
+    if (verificaEvento.length === 0) {
+      console.log(`❌ Evento ID ${id} não encontrado`)
+      return res.status(404).json({
+        success: false,
+        error: "Evento não encontrado",
+      })
+    }
+
+    const eventoOriginal = verificaEvento[0]
+    console.log(`🔍 Evento encontrado:`, eventoOriginal)
+
+    // Validações específicas
+    if (eventoOriginal.tipo === "Chegada" && odometro) {
+      // Buscar a saída correspondente para validar o odômetro
+      const saidaAnterior = await executeQuery(
+        `SELECT e.odometro as odometro_saida
+         FROM eventos e 
+         WHERE e.motorista_id = ? 
+         AND e.tipo = 'Saída' 
+         AND e.data_hora < ?
+         ORDER BY e.data_hora DESC 
+         LIMIT 1`,
+        [eventoOriginal.motorista_id, eventoOriginal.data_hora],
+      )
+
+      if (saidaAnterior.length > 0 && odometro < saidaAnterior[0].odometro_saida) {
+        return res.status(400).json({
+          success: false,
+          error: "Odômetro de chegada deve ser maior que o de saída",
+          odometro_saida: saidaAnterior[0].odometro_saida,
+        })
+      }
+    }
+
+    // Preparar campos para atualização
+    const camposParaAtualizar = []
+    const valoresParaAtualizar = []
+
+    if (telefone_motorista) {
+      camposParaAtualizar.push("telefone_motorista = ?")
+      valoresParaAtualizar.push(telefone_motorista)
+    }
+
+    // Observações podem ser null
+    camposParaAtualizar.push("observacoes = ?")
+    valoresParaAtualizar.push(observacoes || null)
+
+    // Odômetro só pode ser atualizado para eventos de chegada
+    if (eventoOriginal.tipo === "Chegada" && odometro) {
+      camposParaAtualizar.push("odometro = ?")
+      valoresParaAtualizar.push(odometro)
+
+      // Atualizar também o odômetro do carro
+      await executeQuery("UPDATE carros SET odometro = ? WHERE id = ?", [odometro, eventoOriginal.carro_id])
+    }
+
+    // Se não há campos para atualizar, retornar sucesso sem fazer nada
+    if (camposParaAtualizar.length === 0) {
+      return res.json({
+        success: true,
+        message: "Nenhum campo para atualizar",
+        evento: eventoOriginal,
+      })
+    }
+
+    // Adicionar ID para a cláusula WHERE
+    valoresParaAtualizar.push(id)
+
+    // Atualizar o evento
+    await executeQuery(`UPDATE eventos SET ${camposParaAtualizar.join(", ")} WHERE id = ?`, valoresParaAtualizar)
+
+    // Buscar evento atualizado
+    const eventoAtualizado = await executeQuery(
+      `SELECT e.id, e.tipo, e.odometro, e.telefone_motorista, e.observacoes, 
+       DATE_FORMAT(e.data_hora, '%d/%m/%Y %H:%i:%s') as data_hora, 
+       m.nome as motorista_nome, m.cnh as motorista_cnh, 
+       c.marca as carro_marca, c.modelo as carro_modelo, c.placa as carro_placa, 
+       g.nome as gestor_nome 
+       FROM eventos e 
+       INNER JOIN motoristas m ON e.motorista_id = m.id 
+       INNER JOIN carros c ON e.carro_id = c.id 
+       INNER JOIN gestores g ON e.gestor_id = g.id 
+       WHERE e.id = ?`,
+      [id],
+    )
+
+    // Registrar a operação no log
+    await logger.info(`Evento editado`, "eventos", {
+      eventoId: id,
+      tipo: eventoOriginal.tipo,
+      motoristaId: eventoOriginal.motorista_id,
+      motoristaNome: eventoOriginal.motorista_nome,
+      carroId: eventoOriginal.carro_id,
+      carroInfo: `${eventoOriginal.carro_marca} ${eventoOriginal.carro_modelo} - ${eventoOriginal.carro_placa}`,
+      gestorId: gestorId,
+      gestorEdicao: gestorId,
+      camposAtualizados: camposParaAtualizar.join(", "),
+      ipAddress: req.ip,
+    })
+
+    console.log(`✅ Evento ID ${id} editado com sucesso`)
+
+    res.json({
+      success: true,
+      message: "Evento atualizado com sucesso",
+      evento: eventoAtualizado[0],
+    })
+  } catch (error) {
+    console.error("❌ Erro ao editar evento:", error)
+    res.status(500).json({
+      success: false,
+      error: "Erro ao editar evento",
+      details: error.message,
+    })
+  }
+})
+
+// DELETE /api/eventos/:id - Excluir um evento
+router.delete("/:id", async (req, res) => {
+  try {
+    console.log(`🗑️ DELETE /api/eventos/${req.params.id} - Excluindo evento...`)
+
+    const { id } = req.params
+    const gestorId = req.user?.id || null
+
+    // Verificar se o evento existe e obter detalhes para o log
+    const verificaEvento = await executeQuery(
+      `SELECT e.*, 
+       m.nome as motorista_nome, 
+       c.marca as carro_marca, c.modelo as carro_modelo, c.placa as carro_placa,
+       g.nome as gestor_nome
+       FROM eventos e
+       INNER JOIN motoristas m ON e.motorista_id = m.id
+       INNER JOIN carros c ON e.carro_id = c.id
+       INNER JOIN gestores g ON e.gestor_id = g.id
+       WHERE e.id = ?`,
+      [id],
+    )
+
+    if (verificaEvento.length === 0) {
+      console.log(`❌ Evento ID ${id} não encontrado`)
+      return res.status(404).json({
+        success: false,
+        error: "Evento não encontrado",
+      })
+    }
+
+    const eventoInfo = verificaEvento[0]
+    console.log(`🔍 Evento encontrado:`, eventoInfo)
+
+    // Verificar se é um evento de saída sem chegada correspondente
+    if (eventoInfo.tipo === "Saída") {
+      const temChegada = await executeQuery(
+        `SELECT COUNT(*) as count FROM eventos 
+         WHERE motorista_id = ? AND tipo = 'Chegada' AND data_hora > ?`,
+        [eventoInfo.motorista_id, eventoInfo.data_hora],
+      )
+
+      // Se não houver chegada, precisamos restaurar o status do carro e motorista
+      if (temChegada[0].count === 0) {
+        console.log(`🔄 Restaurando status do carro e motorista...`)
+        await executeQuery("UPDATE carros SET status = 'Disponível' WHERE id = ?", [eventoInfo.carro_id])
+        await executeQuery("UPDATE motoristas SET status = 'Ativo' WHERE id = ?", [eventoInfo.motorista_id])
+      }
+    }
+
+    // Excluir o evento
+    await executeQuery("DELETE FROM eventos WHERE id = ?", [id])
+
+    // Registrar a operação no log
+    await logger.info(`Evento excluído`, "eventos", {
+      eventoId: id,
+      tipo: eventoInfo.tipo,
+      motoristaId: eventoInfo.motorista_id,
+      motoristaNome: eventoInfo.motorista_nome,
+      carroId: eventoInfo.carro_id,
+      carroInfo: `${eventoInfo.carro_marca} ${eventoInfo.carro_modelo} - ${eventoInfo.carro_placa}`,
+      gestorId: gestorId,
+      gestorExclusao: gestorId,
+      ipAddress: req.ip,
+    })
+
+    console.log(`✅ Evento ID ${id} excluído com sucesso`)
+
+    res.json({
+      success: true,
+      message: "Evento excluído com sucesso",
+      evento: eventoInfo,
+    })
+  } catch (error) {
+    console.error("❌ Erro ao excluir evento:", error)
+    res.status(500).json({
+      success: false,
+      error: "Erro ao excluir evento",
+      details: error.message,
+    })
+  }
+})
+
 // GET /api/eventos/dashboard - Dados para dashboard
 router.get("/dashboard", async (req, res) => {
   try {

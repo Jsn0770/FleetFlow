@@ -14,9 +14,6 @@ import { useToast } from "@/hooks/use-toast"
 import {
   Calendar,
   Plus,
-  MapPin,
-  Clock,
-  User,
   Phone,
   Gauge,
   AlertCircle,
@@ -27,16 +24,26 @@ import {
   Route,
   CheckCircle,
   AlertTriangle,
+  Trash2,
+  Pencil,
 } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 
 const estilosCustomizados = `
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateX(-10px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
-  .animate-fade-in {
-    animation: fade-in 0.3s ease-out;
-  }
+ @keyframes fade-in {
+   from { opacity: 0; transform: translateX(-10px); }
+   to { opacity: 1; transform: translateX(0); }
+ }
+ .animate-fade-in {
+   animation: fade-in 0.3s ease-out;
+ }
 `
 
 export default function Eventos() {
@@ -58,6 +65,19 @@ export default function Eventos() {
   const [loadingSubmit, setLoadingSubmit] = useState(false)
   const [buscaLoading, setBuscaLoading] = useState(false)
   const { toast } = useToast()
+
+  // Estados para exclusão de eventos
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [eventoParaExcluir, setEventoParaExcluir] = useState(null)
+  const [loadingExclusao, setLoadingExclusao] = useState(false)
+
+  // Estados para edição de eventos
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [eventoParaEditar, setEventoParaEditar] = useState(null)
+  const [editTelefoneMotorista, setEditTelefoneMotorista] = useState("")
+  const [editObservacoes, setEditObservacoes] = useState("")
+  const [editOdometro, setEditOdometro] = useState("")
+  const [loadingEdicao, setLoadingEdicao] = useState(false)
 
   // Buscar dados iniciais
   useEffect(() => {
@@ -405,6 +425,91 @@ export default function Eventos() {
     // Manter o gestor selecionado
   }
 
+  // Funções para edição de eventos
+  const abrirDialogoEdicao = (evento) => {
+    setEventoParaEditar(evento)
+    setEditTelefoneMotorista(evento.telefone_motorista || "")
+    setEditObservacoes(evento.observacoes || "")
+    setEditOdometro(evento.odometro ? evento.odometro.toString() : "")
+    setEditDialogOpen(true)
+  }
+
+  const salvarEdicao = async () => {
+    if (!eventoParaEditar) return
+
+    // Validações básicas
+    if (!editTelefoneMotorista || editTelefoneMotorista.replace(/\D/g, "").length < 10) {
+      toast({
+        title: "Erro",
+        description: "Telefone do motorista é obrigatório e deve ter pelo menos 10 dígitos",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Para eventos de chegada, validar odômetro
+    if (eventoParaEditar.tipo === "Chegada") {
+      if (!editOdometro || Number.parseInt(editOdometro) <= 0) {
+        toast({
+          title: "Erro",
+          description: "Odômetro é obrigatório para eventos de chegada",
+          variant: "destructive",
+        })
+        return
+      }
+    }
+
+    setLoadingEdicao(true)
+    try {
+      console.log(`✏️ Editando evento ID ${eventoParaEditar.id}...`)
+
+      const dadosAtualizados = {
+        telefone_motorista: editTelefoneMotorista,
+        observacoes: editObservacoes,
+      }
+
+      // Adicionar odômetro apenas para eventos de chegada
+      if (eventoParaEditar.tipo === "Chegada" && editOdometro) {
+        dadosAtualizados.odometro = Number.parseInt(editOdometro)
+      }
+
+      const response = await fetch(`http://localhost:3000/api/eventos/${eventoParaEditar.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(dadosAtualizados),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        console.log("✅ Evento editado com sucesso")
+        toast({
+          title: "Sucesso",
+          description: "Evento atualizado com sucesso",
+        })
+
+        // Atualizar a lista de eventos
+        await carregarEventos()
+        await carregarDados()
+      } else {
+        throw new Error(data.error || "Erro ao editar evento")
+      }
+    } catch (error) {
+      console.error("❌ Erro ao editar evento:", error)
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível editar o evento",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingEdicao(false)
+      setEditDialogOpen(false)
+      setEventoParaEditar(null)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
 
@@ -546,6 +651,55 @@ export default function Eventos() {
     }
   })
 
+  // Funções para exclusão de eventos
+  const confirmarExclusao = (evento) => {
+    setEventoParaExcluir(evento)
+    setConfirmDialogOpen(true)
+  }
+
+  const excluirEvento = async () => {
+    if (!eventoParaExcluir) return
+
+    setLoadingExclusao(true)
+    try {
+      console.log(`🗑️ Excluindo evento ID ${eventoParaExcluir.id}...`)
+
+      const response = await fetch(`http://localhost:3000/api/eventos/${eventoParaExcluir.id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        console.log("✅ Evento excluído com sucesso")
+        toast({
+          title: "Sucesso",
+          description: "Evento excluído com sucesso",
+        })
+
+        // Atualizar a lista de eventos
+        await carregarEventos()
+        await carregarDados()
+      } else {
+        throw new Error(data.error || "Erro ao excluir evento")
+      }
+    } catch (error) {
+      console.error("❌ Erro ao excluir evento:", error)
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível excluir o evento",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingExclusao(false)
+      setConfirmDialogOpen(false)
+      setEventoParaExcluir(null)
+    }
+  }
+
   console.log("Motoristas disponíveis para", tipoEvento, ":", motoristasDisponiveis)
 
   const estatisticas = obterEstatisticasFiltros()
@@ -554,6 +708,79 @@ export default function Eventos() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    )
+  }
+
+  // Renderização da tabela de eventos
+  const renderizarTabela = (eventosParaRenderizar) => {
+    return (
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[100px]">Tipo</TableHead>
+              <TableHead>Data/Hora</TableHead>
+              <TableHead>Motorista</TableHead>
+              <TableHead>Veículo</TableHead>
+              <TableHead>Odômetro</TableHead>
+              <TableHead>Observações</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {eventosParaRenderizar.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-6">
+                  Nenhum evento encontrado.
+                </TableCell>
+              </TableRow>
+            ) : (
+              eventosParaRenderizar.map((evento) => (
+                <TableRow key={evento.id} className="animate-fade-in">
+                  <TableCell>
+                    <Badge variant={evento.tipo === "Saída" ? "destructive" : "default"}>{evento.tipo}</Badge>
+                  </TableCell>
+                  <TableCell>{evento.data_hora}</TableCell>
+                  <TableCell>{evento.motorista_nome}</TableCell>
+                  <TableCell>{evento.carro_info}</TableCell>
+                  <TableCell>{evento.odometro?.toLocaleString()} km</TableCell>
+                  <TableCell>{evento.observacoes}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {evento.tipo === "Saída" && verificarViagemAtiva(evento) && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => preencherFormularioComSaida(evento)}
+                          title="Registrar Chegada"
+                        >
+                          <Route className="w-4 h-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        onClick={() => abrirDialogoEdicao(evento)}
+                        title="Editar Evento"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => confirmarExclusao(evento)}
+                        title="Excluir Evento"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
       </div>
     )
   }
@@ -1009,117 +1236,158 @@ export default function Eventos() {
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Diálogo de confirmação de exclusão */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar exclusão</DialogTitle>
+            <DialogDescription>Tem certeza que deseja excluir este evento?</DialogDescription>
+          </DialogHeader>
+
+          {eventoParaExcluir && (
+            <div className="py-4">
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="font-medium">Tipo:</div>
+                  <div>
+                    <Badge variant={eventoParaExcluir.tipo === "Saída" ? "destructive" : "default"}>
+                      {eventoParaExcluir.tipo}
+                    </Badge>
+                  </div>
+
+                  <div className="font-medium">Data/Hora:</div>
+                  <div>{eventoParaExcluir.data_hora}</div>
+
+                  <div className="font-medium">Motorista:</div>
+                  <div>{eventoParaExcluir.motorista_nome}</div>
+
+                  <div className="font-medium">Veículo:</div>
+                  <div>{eventoParaExcluir.carro_info}</div>
+
+                  <div className="font-medium">Odômetro:</div>
+                  <div>{eventoParaExcluir.odometro?.toLocaleString()} km</div>
+                </div>
+
+                {verificarViagemAtiva(eventoParaExcluir) && (
+                  <div className="bg-amber-50 border border-amber-200 rounded p-3 mt-2">
+                    <div className="flex items-start space-x-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h4 className="text-sm font-medium text-amber-800">Atenção: Esta é uma viagem em andamento</h4>
+                        <p className="text-xs text-amber-700 mt-1">
+                          Excluir este evento irá restaurar o status do veículo para "Disponível" e do motorista para
+                          "Ativo".
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setConfirmDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="destructive" onClick={excluirEvento} disabled={loadingExclusao}>
+              {loadingExclusao ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-2" />
+              )}
+              Excluir Evento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de edição de evento */}
+      <Dialog open={editDialogOpen} onOpenChange={() => setEditDialogOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Evento</DialogTitle>
+            <DialogDescription>
+              Atualize os detalhes do evento. Campos como motorista e veículo não podem ser alterados.
+            </DialogDescription>
+          </DialogHeader>
+
+          {eventoParaEditar && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <Label>Tipo</Label>
+                  <div className="font-medium">
+                    <Badge variant={eventoParaEditar.tipo === "Saída" ? "destructive" : "default"}>
+                      {eventoParaEditar.tipo}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div>
+                  <Label>Data/Hora</Label>
+                  <div className="font-medium">{eventoParaEditar.data_hora}</div>
+                </div>
+
+                <div>
+                  <Label>Motorista</Label>
+                  <div className="font-medium">{eventoParaEditar.motorista_nome}</div>
+                </div>
+
+                <div>
+                  <Label>Veículo</Label>
+                  <div className="font-medium">{eventoParaEditar.carro_info}</div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="editTelefoneMotorista">Telefone do Motorista</Label>
+                <Input
+                  id="editTelefoneMotorista"
+                  value={editTelefoneMotorista}
+                  onChange={(e) => setEditTelefoneMotorista(formatarTelefone(e.target.value))}
+                  placeholder="(11) 99999-9999"
+                  maxLength={15}
+                />
+              </div>
+
+              {eventoParaEditar.tipo === "Chegada" && (
+                <div className="space-y-2">
+                  <Label htmlFor="editOdometro">Odômetro (km)</Label>
+                  <Input
+                    id="editOdometro"
+                    type="number"
+                    value={editOdometro}
+                    onChange={(e) => setEditOdometro(e.target.value)}
+                    placeholder="Odômetro atual do veículo"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="editObservacoes">Observações</Label>
+                <Textarea
+                  id="editObservacoes"
+                  value={editObservacoes}
+                  onChange={(e) => setEditObservacoes(e.target.value)}
+                  placeholder="Observações adicionais sobre o evento..."
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setEditDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={salvarEdicao} disabled={loadingEdicao}>
+              {loadingEdicao ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Pencil className="w-4 h-4 mr-2" />}
+              Salvar Alterações
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
-
-  function renderizarTabela(eventosParaRenderizar) {
-    if (eventosParaRenderizar.length > 0) {
-      return (
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data/Hora</TableHead>
-                <TableHead>Gestor</TableHead>
-                <TableHead>Motorista</TableHead>
-                <TableHead>Telefone</TableHead>
-                <TableHead>Veículo</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Odômetro</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Observações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {eventosParaRenderizar.map((evento) => {
-                const viagemAtiva = verificarViagemAtiva(evento)
-                const viagemFinalizada = verificarViagemFinalizada(evento)
-
-                return (
-                  <TableRow key={evento.id}>
-                    <TableCell className="flex items-center space-x-2">
-                      <Clock className="w-4 h-4 text-gray-400" />
-                      <span className="font-mono text-sm">{evento.data_hora}</span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        <User className="w-4 h-4 text-gray-400" />
-                        <span>{evento.gestor_nome || "Admin"}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{evento.motorista_nome}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        <Phone className="w-4 h-4 text-gray-400" />
-                        <span className="font-mono text-sm">{evento.telefone_motorista}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">{evento.carro_info}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={evento.tipo === "Saída" ? "destructive" : "default"}
-                        className="flex items-center space-x-1 w-fit"
-                      >
-                        <MapPin className="w-3 h-3" />
-                        <span>{evento.tipo}</span>
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        <Gauge className="w-4 h-4 text-gray-400" />
-                        <span>{evento.odometro?.toLocaleString()} km</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {viagemAtiva && (
-                        <div className="flex items-center space-x-2">
-                          <Badge
-                            variant="outline"
-                            className="text-orange-600 border-orange-600 cursor-pointer hover:bg-orange-50 hover:border-orange-700 transition-all duration-200 group"
-                            onClick={() => preencherFormularioComSaida(evento)}
-                            title="Clique para registrar a chegada automaticamente"
-                          >
-                            <Route className="w-3 h-3 mr-1 group-hover:animate-pulse" />
-                            Em Andamento
-                            <span className="ml-1 text-xs opacity-70 group-hover:opacity-100">📝</span>
-                          </Badge>
-                          <span className="text-xs text-orange-500 hidden group-hover:inline animate-fade-in">
-                            Clique aqui
-                          </span>
-                        </div>
-                      )}
-                      {viagemFinalizada && (
-                        <Badge variant="outline" className="text-green-600 border-green-600">
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          Finalizada
-                        </Badge>
-                      )}
-                      {!viagemAtiva && !viagemFinalizada && (
-                        <Badge variant="outline" className="text-gray-500 border-gray-500">
-                          -
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">{evento.observacoes || "-"}</TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )
-    } else {
-      return (
-        <div className="text-center py-8">
-          <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">
-            {filtroStatus === "ativos" && "Nenhuma viagem ativa encontrada"}
-            {filtroStatus === "finalizados" && "Nenhuma viagem finalizada encontrada"}
-            {filtroStatus === "todos" &&
-              (busca ? "Nenhum evento encontrado para a busca" : "Nenhum evento registrado ainda")}
-          </p>
-        </div>
-      )
-    }
-  }
 }

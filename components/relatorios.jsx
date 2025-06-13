@@ -813,7 +813,6 @@ export default function Relatorios() {
         Motorista: evento.motoristaNome,
         Veículo: evento.carroInfo,
         "Odômetro (km)": evento.odometro || 0,
-        Destino: evento.destino || "",
         Observações: evento.observacoes || "",
         Gestor: evento.gestorNome || "",
       }))
@@ -1572,7 +1571,6 @@ export default function Relatorios() {
                       <TableHead>Motorista</TableHead>
                       <TableHead>Veículo</TableHead>
                       <TableHead>Odômetro</TableHead>
-                      <TableHead>Destino</TableHead>
                       <TableHead>Gestor</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1586,7 +1584,6 @@ export default function Relatorios() {
                         <TableCell>{evento.motoristaNome}</TableCell>
                         <TableCell className="text-sm">{evento.carroInfo}</TableCell>
                         <TableCell>{evento.odometro ? `${evento.odometro.toLocaleString()} km` : "-"}</TableCell>
-                        <TableCell className="text-sm">{evento.destino || "-"}</TableCell>
                         <TableCell className="text-sm">{evento.gestorNome || "-"}</TableCell>
                       </TableRow>
                     ))}
